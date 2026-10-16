@@ -1,0 +1,1366 @@
+<!DOCTYPE html>
+<html lang="it" class="h-full overflow-hidden select-none">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Spesa Sincronizzata Locale</title>
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- FontAwesome per le icone -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <!-- JsBarcode per generare i codici a barre -->
+    <script src="https://cdn.jsdelivr.net/npm/jsbarcode@3.11.5/dist/JsBarcode.all.min.js"></script>
+    <!-- Html5-QRCode per scansionare codici con la fotocamera -->
+    <script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
+    <!-- QRCode.js per generare i QR Code -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+    <!-- PDF.js per leggere file PDF -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.16.105/pdf.min.js"></script>
+
+    <style>
+        html, body {
+            touch-action: manipulation;
+            overscroll-behavior: none;
+            overflow: hidden;
+            height: 100%;
+        }
+        .scrollable-container {
+            overscroll-behavior-y: contain;
+            -webkit-overflow-scrolling: touch;
+        }
+        /* Stile linguette laterali a registro/separatore */
+        .tab-index-bar {
+            position: absolute;
+            right: 0;
+            top: 50%;
+            transform: translateY(-50%);
+            display: flex;
+            flex-direction: column;
+            gap: 3px;
+            z-index: 40;
+        }
+        .tab-index-item {
+            width: 28px;
+            height: 32px;
+            border-top-left-radius: 6px;
+            border-bottom-left-radius: 6px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: white;
+            font-size: 11px;
+            box-shadow: -2px 2px 4px rgba(0,0,0,0.15);
+            cursor: pointer;
+            transition: transform 0.15s ease;
+        }
+        .tab-index-item:active {
+            transform: scale(1.1);
+        }
+    </style>
+</head>
+<body class="bg-gradient-to-br from-emerald-50 to-teal-100 h-full flex flex-col justify-between p-3 max-w-md mx-auto relative">
+
+    <!-- Card Principale dell'App -->
+    <div id="main-app-card" class="bg-white rounded-2xl shadow-xl overflow-hidden flex flex-col h-full max-h-[calc(100vh-4.5rem)] relative">
+        
+        <!-- Header Fisso -->
+        <div id="app-header" class="bg-emerald-600 p-4 text-white text-center shrink-0 transition-all duration-300">
+            <h1 class="text-lg font-bold flex items-center justify-center gap-2">
+                <i class="fa-solid fa-basket-shopping"></i> Lista Spesa Locale
+            </h1>
+            <p class="text-emerald-100 text-[11px] mt-0.5"><i class="fa-solid fa-hard-drive mr-1"></i> Salvataggio sul dispositivo</p>
+        </div>
+
+        <!-- Pulsante Uscita Fullscreen (visibile solo a tutto schermo) -->
+        <button id="btn-exit-fullscreen" onclick="toggleFullScreen()" class="hidden absolute top-2 right-2 bg-red-600 hover:bg-red-700 text-white z-50 px-2.5 py-1 rounded-xl text-xs font-bold shadow-lg flex items-center gap-1">
+            <i class="fa-solid fa-compress"></i> Esci
+        </button>
+
+        <!-- CONTENUTO DELLE SCHEDE (PAGES) -->
+        <div class="p-4 flex-1 overflow-hidden flex flex-col relative">
+
+            <!-- TAB 1: DA COMPRARE -->
+            <div id="tab-da-comprare" class="tab-content flex flex-col h-full overflow-hidden relative">
+                
+                <!-- Azione Rapida / Toggle Categorie e Fullscreen -->
+                <div class="mb-2 flex justify-between items-center bg-emerald-50 p-2 rounded-xl border border-emerald-100 text-xs shrink-0">
+                    <span id="foto-attiva-avviso" class="text-emerald-800 font-medium text-[10px] hidden"><i class="fa-solid fa-camera text-emerald-600 mr-1"></i> Foto pronta: clicca un articolo!</span>
+                    <span id="foto-attiva-testo" class="text-emerald-800 font-medium text-[11px]">Vista:</span>
+                    
+                    <div class="flex gap-1.5 items-center">
+                        <button onclick="toggleVisualizzazioneCategorie()" id="btn-toggle-cat" class="bg-emerald-600 hover:bg-emerald-700 text-white px-2 py-1 rounded-lg font-medium transition shadow-sm text-[11px]">
+                            <i class="fa-solid fa-bookmark mr-1"></i> Segnalibri
+                        </button>
+                        <button onclick="toggleFullScreen()" title="Schermo Intero" class="bg-teal-700 hover:bg-teal-800 text-white p-1.5 rounded-lg transition shadow-sm text-xs">
+                            <i class="fa-solid fa-expand"></i>
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Form per Cerca / Aggiungi Articoli -->
+                <form id="add-form" class="space-y-2 mb-3 shrink-0">
+                    <div class="flex gap-2">
+                        <input type="text" id="item-input" placeholder="Cerca o scrivi nuovo..." required oninput="filtraLista(this.value)"
+                            class="flex-1 px-3 py-2 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-emerald-500 text-xs">
+                        <button type="submit" title="Aggiungi nuovo" class="bg-emerald-600 hover:bg-emerald-700 text-white px-3.5 py-2 rounded-xl font-medium transition shadow-md flex items-center justify-center">
+                            <i class="fa-solid fa-plus text-xs"></i>
+                        </button>
+                    </div>
+
+                    <!-- Input Nota Aggiuntiva -->
+                    <div>
+                        <input type="text" id="note-input" placeholder="Nota opzionale (es. pentola da 32)" 
+                            class="w-full px-3 py-1.5 border border-gray-200 rounded-xl text-[11px] focus:outline-none focus:ring-2 focus:ring-emerald-500 bg-gray-50">
+                    </div>
+                    
+                    <div class="flex gap-1.5 items-center">
+                        <select id="category-input" class="w-1/3 px-1.5 py-1.5 border border-gray-200 rounded-xl text-[11px] bg-white text-gray-700 focus:outline-none focus:ring-2 focus:ring-emerald-500">
+                            <!-- Popolato dinamicamente -->
+                        </select>
+
+                        <input type="text" id="quantity-input" placeholder="Qtà (es. 1l)" 
+                            class="w-1/4 px-2 py-1.5 border border-gray-200 rounded-xl text-[11px] focus:outline-none focus:ring-2 focus:ring-emerald-500">
+
+                        <div class="flex-1 flex gap-1">
+                            <label class="flex-1 flex items-center justify-center gap-1 bg-gray-50 hover:bg-gray-100 border border-gray-200 rounded-xl text-[10px] text-gray-600 cursor-pointer py-1.5 transition">
+                                <i class="fa-solid fa-camera text-emerald-600"></i>
+                                <span>Scatta</span>
+                                <input type="file" accept="image/*" capture="environment" class="hidden" onchange="anteprimaFoto(this)">
+                            </label>
+
+                            <label class="flex-1 flex items-center justify-center gap-1 bg-gray-50 hover:bg-gray-100 border border-gray-200 rounded-xl text-[10px] text-gray-600 cursor-pointer py-1.5 transition">
+                                <i class="fa-solid fa-image text-emerald-600"></i>
+                                <span>Galleria</span>
+                                <input type="file" accept="image/*" class="hidden" onchange="anteprimaFoto(this)">
+                            </label>
+                        </div>
+                    </div>
+
+                    <div id="preview-container" class="hidden relative inline-block mt-1">
+                        <img id="img-preview" src="" class="w-12 h-12 object-cover rounded-lg border border-gray-300">
+                        <button type="button" onclick="rimuoviFoto()" class="absolute -top-1.5 -right-1.5 bg-red-500 text-white rounded-full w-4 h-4 text-[9px] flex items-center justify-center shadow">×</button>
+                    </div>
+                </form>
+
+                <!-- Barra dei Progressi -->
+                <div class="mb-3 bg-gray-50 p-2.5 rounded-xl border border-gray-100 shrink-0">
+                    <div class="flex justify-between text-[11px] font-semibold text-gray-600 mb-1">
+                        <span id="progress-text">Completati: 0 su 0</span>
+                        <span id="progress-percent">0%</span>
+                    </div>
+                    <div class="w-full bg-gray-200 h-1.5 rounded-full overflow-hidden">
+                        <div id="progress-bar" class="bg-emerald-500 h-1.5 rounded-full transition-all duration-500" style="width: 0%"></div>
+                    </div>
+                </div>
+
+                <!-- Lista Articoli Da Comprare -->
+                <div id="list-scroll-container" class="flex-1 overflow-y-auto scrollable-container pr-4 relative">
+                    <h2 class="text-[10px] font-bold text-gray-400 uppercase tracking-wider mb-1.5">Da Comprare</h2>
+                    <div id="items-container" class="space-y-2">
+                        <div class="text-center py-8 text-gray-400 text-xs">Caricamento lista...</div>
+                    </div>
+                </div>
+
+                <!-- BARRA SEGNALIBRI LATERALE -->
+                <div id="category-side-tabs" class="tab-index-bar hidden">
+                    <!-- Generate dinamicamente -->
+                </div>
+            </div>
+
+            <!-- TAB 2: GIÀ COMPRATI -->
+            <div id="tab-comprati" class="tab-content hidden flex flex-col h-full overflow-hidden">
+                <div class="flex justify-between items-center mb-2 shrink-0">
+                    <h2 class="text-xs font-bold text-emerald-600 uppercase tracking-wider">Articoli Già Comprati</h2>
+                    <button onclick="pulisciComprati()" class="text-[11px] text-red-500 hover:text-red-700 font-medium transition">
+                        Elimina tutti
+                    </button>
+                </div>
+                <div id="bought-container" class="space-y-2 flex-1 overflow-y-auto scrollable-container pr-1">
+                    <!-- Articoli spuntati -->
+                </div>
+            </div>
+
+            <!-- TAB 3: COSTI E BUONI -->
+            <div id="tab-costi" class="tab-content hidden flex flex-col h-full overflow-y-auto scrollable-container pr-1 space-y-3">
+                <h2 class="text-xs font-bold text-gray-700 flex items-center gap-2">
+                    <i class="fa-solid fa-receipt text-emerald-600"></i> Registra Spesa
+                </h2>
+                
+                <form id="cost-form" class="bg-gray-50 p-2.5 rounded-xl border border-gray-100 space-y-2 text-xs">
+                    <div>
+                        <label class="text-[10px] text-gray-500 font-semibold block mb-0.5">Data Spesa</label>
+                        <input type="date" id="cost-date" required class="w-full px-2.5 py-1.5 border border-gray-200 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-emerald-500">
+                    </div>
+
+                    <div class="flex gap-2">
+                        <div class="w-1/2">
+                            <label class="text-[10px] text-gray-500 font-semibold block mb-0.5">Totale Spesa (€)</label>
+                            <input type="number" step="0.01" id="cost-amount" placeholder="es. 75.00" required class="w-full px-2.5 py-1.5 border border-gray-200 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-emerald-500">
+                        </div>
+                        <div class="w-1/2">
+                            <label class="text-[10px] text-gray-500 font-semibold block mb-0.5">Contanti indicativi (€)</label>
+                            <input type="number" step="0.01" id="cost-cash" placeholder="es. 70.00" value="0" required class="w-full px-2.5 py-1.5 border border-gray-200 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-emerald-500">
+                        </div>
+                    </div>
+
+                    <button type="submit" class="w-full bg-emerald-600 hover:bg-emerald-700 text-white py-2 rounded-lg font-medium transition shadow-sm text-xs">
+                        Registra e Calcola Buoni
+                    </button>
+                </form>
+
+                <div class="grid grid-cols-2 gap-2">
+                    <div class="bg-emerald-50 p-2.5 rounded-xl border border-emerald-100 text-center">
+                        <span class="text-[9px] text-emerald-700 uppercase font-bold block">Spesa Mese</span>
+                        <span id="monthly-total" class="text-base font-extrabold text-emerald-800">€ 0.00</span>
+                        <span id="monthly-vouchers" class="text-[9px] text-emerald-600 block mt-0.5">Buoni: 0</span>
+                    </div>
+                    <div class="bg-teal-50 p-2.5 rounded-xl border border-teal-100 text-center">
+                        <span class="text-[9px] text-teal-700 uppercase font-bold block">Spesa Anno</span>
+                        <span id="yearly-total" class="text-base font-extrabold text-teal-800">€ 0.00</span>
+                        <span id="yearly-vouchers" class="text-[9px] text-teal-600 block mt-0.5">Buoni: 0</span>
+                    </div>
+                </div>
+
+                <div>
+                    <h3 class="text-[10px] font-bold text-gray-400 uppercase tracking-wider mb-1.5">Storico Spese</h3>
+                    <div id="costs-container" class="space-y-1.5">
+                        <!-- Storico dinamico -->
+                    </div>
+                </div>
+            </div>
+
+            <!-- TAB 4: CARTE FEDELTÀ -->
+            <div id="tab-carte" class="tab-content hidden flex flex-col h-full overflow-hidden space-y-3">
+                <div class="flex justify-between items-center shrink-0">
+                    <h2 class="text-xs font-bold text-gray-700 flex items-center gap-2">
+                        <i class="fa-solid fa-id-card text-emerald-600"></i> Carte Fedeltà (Locali)
+                    </h2>
+                </div>
+
+                <!-- Barra di Ricerca Carte -->
+                <div class="shrink-0">
+                    <input type="text" id="card-search-input" placeholder="🔍 Cerca carta (es. Esselunga, IKEA...)" oninput="filtraCarte(this.value)"
+                        class="w-full px-3 py-1.5 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-emerald-500 text-xs bg-gray-50">
+                </div>
+
+                <div id="reader-container" class="hidden bg-gray-900 rounded-xl overflow-hidden p-2 text-center shrink-0">
+                    <div id="reader" class="w-full"></div>
+                    <button onclick="stopCamera()" class="mt-2 bg-red-600 text-white px-3 py-1 rounded text-xs font-bold">
+                        Chiudi Fotocamera
+                    </button>
+                </div>
+
+                <form id="card-form" class="bg-gray-50 p-2.5 rounded-xl border border-gray-100 space-y-2 text-xs shrink-0">
+                    <!-- Selettore Negozio con Loghi/Icone Originali -->
+                    <div class="grid grid-cols-2 gap-1.5">
+                        <select id="card-brand-select" onchange="selezionaBrandCarta(this.value)" class="px-2 py-1.5 border border-gray-200 rounded-lg text-xs bg-white focus:outline-none focus:ring-2 focus:ring-emerald-500">
+                            <option value="">-- Scegli Marchio --</option>
+                            <option value="Esselunga|fa-solid fa-carrot|#cc0000">Esselunga</option>
+                            <option value="Conad|fa-solid fa-basket-shopping|#da291c">Conad</option>
+                            <option value="Coop|fa-solid fa-heart|#ed1c24">Coop</option>
+                            <option value="Lidl|fa-solid fa-store|#0050aa">Lidl</option>
+                            <option value="Eurospin|fa-solid fa-tag|#0054a6">Eurospin</option>
+                            <option value="Carrefour|fa-solid fa-cart-flatbed|#004e92">Carrefour</option>
+                            <option value="IKEA|fa-solid fa-couch|#0051ba">IKEA</option>
+                            <option value="Decathlon|fa-solid fa-person-running|#0082c3">Decathlon</option>
+                            <option value="MediaWorld|fa-solid fa-laptop|#e4002b">MediaWorld</option>
+                            <option value="Unieuro|fa-solid fa-tv|#003399">Unieuro</option>
+                            <option value="Toys Center|fa-solid fa-gamepad|#ffcc00">Toys Center</option>
+                            <option value="Sephora|fa-solid fa-spray-can|#000000">Sephora</option>
+                            <option value="Eni Station|fa-solid fa-gas-pump|#ffcc00">Eni Station</option>
+                            <option value="Q8|fa-solid fa-fire-flame-simple|#e31b23">Q8</option>
+                            <option value="Altro|fa-solid fa-id-card|#10b981">Altro Negozio</option>
+                        </select>
+                        <input type="text" id="card-name" placeholder="Nome Negozio" required class="px-2.5 py-1.5 border border-gray-200 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-emerald-500">
+                    </div>
+                    
+                    <div class="flex gap-1.5">
+                        <select id="card-type" class="w-1/3 px-1.5 py-1.5 border border-gray-200 rounded-lg text-[11px] bg-white focus:outline-none focus:ring-2 focus:ring-emerald-500">
+                            <option value="barcode">Barcode</option>
+                            <option value="qrcode">QR Code</option>
+                        </select>
+                        <input type="text" id="card-number" placeholder="Numero carta" required class="flex-1 px-2.5 py-1.5 border border-gray-200 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-emerald-500">
+                        <button type="button" onclick="startCamera()" class="bg-teal-600 hover:bg-teal-700 text-white px-2.5 py-1.5 rounded-lg font-medium transition flex items-center shrink-0">
+                            <i class="fa-solid fa-camera"></i>
+                        </button>
+                    </div>
+
+                    <!-- Campi nascosti per icona e colore brand -->
+                    <input type="hidden" id="card-icon" value="fa-id-card">
+                    <input type="hidden" id="card-color" value="#10b981">
+
+                    <button type="submit" class="w-full bg-emerald-600 hover:bg-emerald-700 text-white py-1.5 rounded-lg font-medium transition shadow-sm text-xs">
+                        Salva Carta in Locale
+                    </button>
+                </form>
+
+                <div id="cards-container" class="space-y-2 flex-1 overflow-y-auto scrollable-container pr-1">
+                    <!-- Carte salvate locali -->
+                </div>
+            </div>
+
+            <!-- TAB 5: IMPOSTAZIONI E BACKUP -->
+            <div id="tab-impostazioni" class="tab-content hidden space-y-3 text-xs overflow-y-auto scrollable-container pr-1">
+                <h2 class="text-xs font-bold text-gray-700 flex items-center gap-2">
+                    <i class="fa-solid fa-gear text-emerald-600"></i> Impostazioni App
+                </h2>
+
+                <!-- Backup e Ripristino Dati JSON -->
+                <div class="bg-emerald-50/60 p-3 rounded-xl border border-emerald-200 space-y-2">
+                    <label class="font-semibold text-emerald-900 block"><i class="fa-solid fa-box-archive text-emerald-600 mr-1"></i> Backup & Ripristino Dati</label>
+                    <p class="text-[10px] text-emerald-700">Esporta o importa l'intero archivio (articoli, costi, carte e categorie) in un file JSON.</p>
+                    <div class="grid grid-cols-2 gap-2 pt-1">
+                        <button onclick="esportaDatiJSON()" class="bg-emerald-600 hover:bg-emerald-700 text-white py-2 px-2 rounded-lg font-medium transition text-[11px] shadow-sm flex items-center justify-center gap-1">
+                            <i class="fa-solid fa-download"></i> Esporta JSON
+                        </button>
+                        <label class="bg-teal-600 hover:bg-teal-700 text-white py-2 px-2 rounded-lg font-medium transition text-[11px] shadow-sm flex items-center justify-center gap-1 cursor-pointer text-center">
+                            <i class="fa-solid fa-upload"></i> Importa JSON
+                            <input type="file" id="import-json-file" accept=".json" class="hidden" onchange="importaDatiJSON(this)">
+                        </label>
+                    </div>
+                </div>
+
+                <!-- Importa Lista Rapida -->
+                <div class="bg-gray-50 p-3 rounded-xl border border-gray-100 space-y-2">
+                    <label class="font-semibold text-gray-700 block"><i class="fa-solid fa-file-arrow-down text-emerald-600"></i> Importa Lista Rapida (PDF / TXT)</label>
+                    <p class="text-[10px] text-gray-500">Incolla il testo o carica un file PDF/testo per estrarre gli articoli.</p>
+                    <textarea id="import-text" rows="3" placeholder="Latte&#10;Pane&#10;Mele" class="w-full p-2 border border-gray-200 rounded-xl text-xs bg-white focus:outline-none focus:ring-2 focus:ring-emerald-500"></textarea>
+                    <div>
+                        <input type="file" id="import-file" accept=".pdf,.txt" class="w-full text-[10px] text-gray-500 file:mr-2 file:py-1 file:px-2 file:rounded-lg file:border-0 file:text-[10px] file:font-semibold file:bg-emerald-50 file:text-emerald-700">
+                    </div>
+                    <button onclick="eseguiImportazione()" class="w-full bg-emerald-600 hover:bg-emerald-700 text-white py-1.5 rounded-lg font-medium transition text-xs shadow-sm">
+                        Importa Articoli
+                    </button>
+                </div>
+
+                <div class="bg-gray-50 p-3 rounded-xl border border-gray-100 space-y-2">
+                    <label class="font-semibold text-gray-700 block">Valore singolo Buono Pasto (€)</label>
+                    <div class="flex gap-2">
+                        <input type="number" step="0.1" id="voucher-value-input" value="8.0" class="flex-1 px-2.5 py-1.5 border border-gray-200 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-emerald-500">
+                        <button onclick="salvaValoreBuono()" class="bg-emerald-600 hover:bg-emerald-700 text-white px-3 py-1.5 rounded-lg font-medium transition">Salva</button>
+                    </div>
+                </div>
+
+                <!-- Gestione Categorie Personalizzate & Catalogo Icone -->
+                <div class="bg-gray-50 p-3 rounded-xl border border-gray-100 space-y-2">
+                    <label class="font-semibold text-gray-700 block">Gestione Categorie & Catalogo Icone</label>
+                    
+                    <div class="space-y-1.5 mb-2 max-h-32 overflow-y-auto pr-1 border border-gray-200 rounded-lg p-1.5 bg-white" id="categories-settings-container">
+                        <!-- Elenco categorie dinamico -->
+                    </div>
+
+                    <div class="space-y-1.5 pt-1">
+                        <input type="text" id="new-cat-name" placeholder="Nome Categoria (es. Detersivi)" class="w-full px-2.5 py-1.5 border border-gray-200 rounded-lg bg-white text-xs">
+                        
+                        <!-- Catalogo Icone Selezionabili -->
+                        <div>
+                            <span class="text-[10px] text-gray-500 font-medium block mb-1">Scegli un'icona dal catalogo:</span>
+                            <div class="grid grid-cols-6 gap-1.5 bg-white p-2 border border-gray-200 rounded-lg max-h-24 overflow-y-auto" id="icon-catalog">
+                                <!-- Icone dinamiche -->
+                            </div>
+                        </div>
+                    </div>
+                    <button onclick="aggiungiNuovaCategoria()" class="w-full bg-emerald-600 hover:bg-emerald-700 text-white py-1.5 rounded-lg font-medium transition text-xs mt-1">
+                        + Aggiungi Categoria
+                    </button>
+                </div>
+
+                <div class="pt-2 text-center pb-2">
+                    <button onclick="ricaricaListaIniziale()" class="text-red-500 hover:text-red-700 font-medium transition underline">
+                        Ripristina prodotti e impostazioni iniziali
+                    </button>
+                </div>
+            </div>
+
+        </div>
+    </div>
+
+    <!-- MODALE SELEZIONE CATEGORIA RAPIDA -->
+    <div id="category-modal" class="hidden fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
+        <div class="bg-white rounded-2xl max-w-xs w-full p-4 space-y-3 shadow-xl text-center">
+            <h3 class="text-xs font-bold text-gray-800"><i class="fa-solid fa-list text-emerald-600"></i> Seleziona Categoria</h3>
+            <div id="modal-categories-list" class="space-y-1.5 max-h-60 overflow-y-auto">
+                <!-- Voci generate dinamicamente -->
+            </div>
+            <button onclick="chiudiModaleCategoria()" class="w-full bg-gray-100 hover:bg-gray-200 text-gray-700 py-1.5 rounded-xl text-xs font-medium transition mt-2">Annulla</button>
+        </div>
+    </div>
+
+    <!-- BOTTOM NAVIGATION BAR -->
+    <div id="bottom-nav" class="bg-white border-t border-gray-200 shadow-lg flex justify-around py-1.5 px-1 z-50 rounded-2xl shrink-0 mt-2 transition-all duration-300">
+        <button onclick="switchTab('da-comprare')" id="nav-da-comprare" class="flex flex-col items-center flex-1 py-0.5 text-emerald-600 transition">
+            <i class="fa-solid fa-cart-shopping text-sm mb-0.5"></i>
+            <span class="text-[9px] font-medium">Da Comprare</span>
+        </button>
+        <button onclick="switchTab('comprati')" id="nav-comprati" class="flex flex-col items-center flex-1 py-0.5 text-gray-400 hover:text-gray-600 transition">
+            <i class="fa-solid fa-basket-shopping text-sm mb-0.5"></i>
+            <span class="text-[9px] font-medium">Comprati</span>
+        </button>
+        <button onclick="switchTab('costi')" id="nav-costi" class="flex flex-col items-center flex-1 py-0.5 text-gray-400 hover:text-gray-600 transition">
+            <i class="fa-solid fa-receipt text-sm mb-0.5"></i>
+            <span class="text-[9px] font-medium">Costi & Buoni</span>
+        </button>
+        <button onclick="switchTab('carte')" id="nav-carte" class="flex flex-col items-center flex-1 py-0.5 text-gray-400 hover:text-gray-600 transition">
+            <i class="fa-solid fa-id-card text-sm mb-0.5"></i>
+            <span class="text-[9px] font-medium">Fedeltà</span>
+        </button>
+        <button onclick="switchTab('impostazioni')" id="nav-impostazioni" class="flex flex-col items-center flex-1 py-0.5 text-gray-400 hover:text-gray-600 transition">
+            <i class="fa-solid fa-gear text-sm mb-0.5"></i>
+            <span class="text-[9px] font-medium">Impostazioni</span>
+        </button>
+    </div>
+
+    <script>
+        // ==========================================
+        // ⚙️ GESTIONE MEMORIA LOCALE (LOCAL STORAGE)
+        // ==========================================
+
+        const STORAGE_KEYS = {
+            ITEMS: 'shopping_items_local',
+            COSTS: 'shopping_costs_local',
+            CARDS: 'shopping_cards_local',
+            CATEGORIES: 'shopping_categories_local',
+            VOUCHER_VAL: 'voucher_value',
+            GROUP_BY_CAT: 'group_by_categories'
+        };
+
+        let voucherValue = parseFloat(localStorage.getItem(STORAGE_KEYS.VOUCHER_VAL)) || 8.0;
+        document.getElementById('voucher-value-input').value = voucherValue;
+
+        let groupByCategories = localStorage.getItem(STORAGE_KEYS.GROUP_BY_CAT) === 'true';
+        let isFullScreen = false;
+
+        let currentItems = [];
+        let currentCosts = [];
+        let currentCards = [];
+        let currentCategories = [];
+        let html5QrCode = null;
+        let base64FotoTemp = '';
+        let itemIdDaModificare = null;
+        let filtroRicercaTesto = '';
+        let filtroRicercaCarte = '';
+        let selectedIcon = "fa-tag";
+
+        const iconCatalogList = [
+            "fa-carrot", "fa-cheese", "fa-fish", "fa-wheat-awn", "fa-snowflake", 
+            "fa-bottle-droplet", "fa-bolt", "fa-pump-soap", "fa-broom", "fa-cart-shopping",
+            "fa-apple-whole", "fa-drumstick-bite", "fa-cookie", "fa-mug-hot", "fa-wine-bottle",
+            "fa-baby", "fa-paw", "fa-shirt", "fa-pills", "fa-box", "fa-tag"
+        ];
+
+        const categoryColors = [
+            "#ef4444", "#f97316", "#f59e0b", "#10b981", "#06b6d4", 
+            "#3b82f6", "#6366f1", "#8b5cf6", "#ec4899", "#64748b"
+        ];
+
+        document.getElementById('cost-date').valueAsDate = new Date();
+
+        const defaultInitialCategories = [
+            { name: "Frutta e Verdura", icon: "fa-carrot" },
+            { name: "Latticini e Uova", icon: "fa-cheese" },
+            { name: "Carne e Pesce", icon: "fa-fish" },
+            { name: "Dispensa e Pasta", icon: "fa-wheat-awn" },
+            { name: "Surgelati", icon: "fa-snowflake" },
+            { name: "Bevande", icon: "fa-bottle-droplet" },
+            { name: "Elettronica", icon: "fa-bolt" },
+            { name: "Igiene e Cura Personale", icon: "fa-pump-soap" },
+            { name: "Casa e Pulizia", icon: "fa-broom" },
+            { name: "Altro", icon: "fa-cart-shopping" }
+        ];
+
+        const defaultInitialItems = [
+            { text: "Broccoli surgelati", category: "Surgelati", note: "" },
+            { text: "Latte", category: "Latticini e Uova", note: "" },
+            { text: "Banana", category: "Frutta e Verdura", note: "" },
+            { text: "Pomodorini", category: "Frutta e Verdura", note: "" },
+            { text: "Patate", category: "Frutta e Verdura", note: "" },
+            { text: "Pasta", category: "Dispensa e Pasta", note: "" },
+            { text: "Pane", category: "Dispensa e Pasta", note: "" },
+            { text: "Uova", category: "Latticini e Uova", note: "" },
+            { text: "Acqua", category: "Bevande", note: "" },
+            { text: "Carta igienica", category: "Casa e Pulizia", note: "" }
+        ];
+
+        function switchTab(tabId) {
+            document.querySelectorAll('.tab-content').forEach(el => el.classList.add('hidden'));
+            document.getElementById('tab-' + tabId).classList.remove('hidden');
+
+            document.querySelectorAll('body button[id^="nav-"]').forEach(btn => {
+                btn.classList.remove('text-emerald-600');
+                btn.classList.add('text-gray-400');
+            });
+
+            const activeBtn = document.getElementById('nav-' + tabId);
+            if(activeBtn) {
+                activeBtn.classList.remove('text-gray-400');
+                activeBtn.classList.add('text-emerald-600');
+            }
+        }
+
+        function caricaDaLocalStorage() {
+            const itemsSaved = localStorage.getItem(STORAGE_KEYS.ITEMS);
+            const costsSaved = localStorage.getItem(STORAGE_KEYS.COSTS);
+            const cardsSaved = localStorage.getItem(STORAGE_KEYS.CARDS);
+            const categoriesSaved = localStorage.getItem(STORAGE_KEYS.CATEGORIES);
+
+            if (itemsSaved !== null) {
+                try { currentItems = JSON.parse(itemsSaved); } catch(e) { currentItems = []; }
+            } else {
+                currentItems = defaultInitialItems.map((item, index) => ({
+                    id: 'item-' + index + '-' + Date.now(),
+                    text: item.text,
+                    category: item.category,
+                    quantity: '',
+                    note: '',
+                    photo: '',
+                    bought: false
+                }));
+            }
+
+            if (costsSaved !== null) {
+                try { currentCosts = JSON.parse(costsSaved); } catch(e) { currentCosts = []; }
+            } else {
+                currentCosts = [];
+            }
+
+            if (cardsSaved !== null) {
+                try { currentCards = JSON.parse(cardsSaved); } catch(e) { currentCards = []; }
+            } else {
+                currentCards = [];
+            }
+
+            if (categoriesSaved !== null) {
+                try { currentCategories = JSON.parse(categoriesSaved); } catch(e) { currentCategories = defaultInitialCategories; }
+            } else {
+                currentCategories = defaultInitialCategories;
+            }
+
+            salvaInLocalStorage();
+            renderAll();
+        }
+
+        function salvaInLocalStorage() {
+            try {
+                localStorage.setItem(STORAGE_KEYS.ITEMS, JSON.stringify(currentItems));
+                localStorage.setItem(STORAGE_KEYS.COSTS, JSON.stringify(currentCosts));
+                localStorage.setItem(STORAGE_KEYS.CARDS, JSON.stringify(currentCards));
+                localStorage.setItem(STORAGE_KEYS.CATEGORIES, JSON.stringify(currentCategories));
+            } catch (e) {
+                console.error("Errore durante il salvataggio in localStorage:", e);
+            }
+        }
+
+        window.ricaricaListaIniziale = function() {
+            if (confirm("Vuoi ripristinare tutti i prodotti, carte e categorie iniziali di default?")) {
+                localStorage.removeItem(STORAGE_KEYS.ITEMS);
+                localStorage.removeItem(STORAGE_KEYS.COSTS);
+                localStorage.removeItem(STORAGE_KEYS.CARDS);
+                localStorage.removeItem(STORAGE_KEYS.CATEGORIES);
+                caricaDaLocalStorage();
+            }
+        }
+
+        // --- BACKUP & RIPRISTINO JSON ---
+        window.esportaDatiJSON = function() {
+            const dataToExport = {
+                version: "1.0",
+                exportedAt: new Date().toISOString(),
+                items: currentItems,
+                costs: currentCosts,
+                cards: currentCards,
+                categories: currentCategories,
+                voucherValue: voucherValue
+            };
+
+            const jsonStr = JSON.stringify(dataToExport, null, 2);
+            const blob = new Blob([jsonStr], { type: "application/json" });
+            const url = URL.createObjectURL(blob);
+            
+            const a = document.createElement("a");
+            a.href = url;
+            a.download = `spesa-backup-${new Date().toISOString().slice(0, 10)}.json`;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            URL.revokeObjectURL(url);
+        }
+
+        window.importaDatiJSON = function(input) {
+            const file = input.files[0];
+            if (!file) return;
+
+            const reader = new FileReader();
+            reader.onload = function(e) {
+                try {
+                    const data = JSON.parse(e.target.result);
+                    if (data.items && Array.isArray(data.items)) currentItems = data.items;
+                    if (data.costs && Array.isArray(data.costs)) currentCosts = data.costs;
+                    if (data.cards && Array.isArray(data.cards)) currentCards = data.cards;
+                    if (data.categories && Array.isArray(data.categories)) currentCategories = data.categories;
+                    if (data.voucherValue) {
+                        voucherValue = parseFloat(data.voucherValue) || 8.0;
+                        localStorage.setItem(STORAGE_KEYS.VOUCHER_VAL, voucherValue);
+                        document.getElementById('voucher-value-input').value = voucherValue;
+                    }
+
+                    salvaInLocalStorage();
+                    renderAll();
+                    alert("Dati ripristinati con successo dal backup JSON!");
+                } catch (err) {
+                    alert("Errore nella lettura del file JSON di backup.");
+                }
+                input.value = '';
+            };
+            reader.readAsText(file);
+        }
+
+        window.toggleFullScreen = function() {
+            isFullScreen = !isFullScreen;
+            const card = document.getElementById('main-app-card');
+            const header = document.getElementById('app-header');
+            const nav = document.getElementById('bottom-nav');
+            const btnExit = document.getElementById('btn-exit-fullscreen');
+
+            if (isFullScreen) {
+                header.classList.add('hidden');
+                nav.classList.add('hidden');
+                card.classList.remove('max-h-[calc(100vh-4.5rem)]');
+                card.classList.add('max-h-full', 'h-full');
+                btnExit.classList.remove('hidden');
+            } else {
+                header.classList.remove('hidden');
+                nav.classList.remove('hidden');
+                card.classList.add('max-h-[calc(100vh-4.5rem)]');
+                btnExit.classList.add('hidden');
+            }
+        }
+
+        window.toggleVisualizzazioneCategorie = function() {
+            groupByCategories = !groupByCategories;
+            localStorage.setItem(STORAGE_KEYS.GROUP_BY_CAT, groupByCategories);
+            aggiornaStatoPulsanteToggle();
+            renderItems();
+        }
+
+        function aggiornaStatoPulsanteToggle() {
+            const btn = document.getElementById('btn-toggle-cat');
+            const sideTabs = document.getElementById('category-side-tabs');
+            if (groupByCategories) {
+                btn.innerHTML = `<i class="fa-solid fa-list mr-1"></i> Semplice`;
+                btn.className = "bg-teal-700 hover:bg-teal-800 text-white px-2 py-1 rounded-lg font-medium transition shadow-sm text-[11px]";
+                sideTabs.classList.remove('hidden');
+            } else {
+                btn.innerHTML = `<i class="fa-solid fa-bookmark mr-1"></i> Segnalibri`;
+                btn.className = "bg-emerald-600 hover:bg-emerald-700 text-white px-2 py-1 rounded-lg font-medium transition shadow-sm text-[11px]";
+                sideTabs.classList.add('hidden');
+            }
+        }
+
+        window.anteprimaFoto = function(input) {
+            if (input.files && input.files[0]) {
+                const file = input.files[0];
+                const reader = new FileReader();
+                
+                reader.onload = function(e) {
+                    const img = new Image();
+                    img.onload = function() {
+                        const MAX_WIDTH = 400;
+                        const MAX_HEIGHT = 400;
+                        let width = img.width;
+                        let height = img.height;
+
+                        if (width > height) {
+                            if (width > MAX_WIDTH) {
+                                height *= MAX_WIDTH / width;
+                                width = MAX_WIDTH;
+                            }
+                        } else {
+                            if (height > MAX_HEIGHT) {
+                                width *= MAX_HEIGHT / height;
+                                height = MAX_HEIGHT;
+                            }
+                        }
+
+                        const canvas = document.createElement('canvas');
+                        canvas.width = width;
+                        canvas.height = height;
+                        const ctx = canvas.getContext('2d');
+                        ctx.drawImage(img, 0, 0, width, height);
+
+                        base64FotoTemp = canvas.toDataURL('image/jpeg', 0.7);
+
+                        document.getElementById('img-preview').src = base64FotoTemp;
+                        document.getElementById('preview-container').classList.remove('hidden');
+                        document.getElementById('foto-attiva-avviso').classList.remove('hidden');
+                        document.getElementById('foto-attiva-testo').classList.add('hidden');
+                    }
+                    img.src = e.target.result;
+                }
+                reader.readAsDataURL(file);
+            }
+        }
+
+        window.rimuoviFoto = function() {
+            base64FotoTemp = '';
+            document.getElementById('preview-container').classList.add('hidden');
+            document.getElementById('foto-attiva-avviso').classList.add('hidden');
+            document.getElementById('foto-attiva-testo').classList.remove('hidden');
+        }
+
+        window.filtraLista = function(valore) {
+            filtroRicercaTesto = valore.trim().toLowerCase();
+            renderItems();
+        }
+
+        window.filtraCarte = function(valore) {
+            filtroRicercaCarte = valore.trim().toLowerCase();
+            renderCards();
+        }
+
+        window.selezionaBrandCarta = function(valore) {
+            if(!valore) return;
+            const parti = valore.split('|');
+            const nome = parti[0];
+            const icona = parti[1];
+            const colore = parti[2];
+
+            if(nome !== "Altro") {
+                document.getElementById('card-name').value = nome;
+            } else {
+                document.getElementById('card-name').value = "";
+            }
+            document.getElementById('card-icon').value = icona;
+            document.getElementById('card-color').value = colore;
+        }
+
+        document.getElementById('add-form').addEventListener('submit', (e) => {
+            e.preventDefault();
+            const input = document.getElementById('item-input');
+            const noteInput = document.getElementById('note-input');
+            const categorySelect = document.getElementById('category-input');
+            const quantityInput = document.getElementById('quantity-input');
+
+            const text = input.value.trim();
+            if (!text) return;
+
+            const newItem = {
+                id: 'custom-' + Date.now(),
+                text: text,
+                category: categorySelect.value,
+                quantity: quantityInput.value.trim(),
+                note: noteInput.value.trim(),
+                photo: base64FotoTemp,
+                bought: false
+            };
+
+            currentItems.unshift(newItem);
+            salvaInLocalStorage();
+            renderItems();
+
+            input.value = '';
+            noteInput.value = '';
+            quantityInput.value = '';
+            rimuoviFoto();
+            filtroRicercaTesto = '';
+            input.focus();
+        });
+
+        window.apriModaleCategoria = function(id, event) {
+            event.stopPropagation();
+            itemIdDaModificare = id;
+            const container = document.getElementById('modal-categories-list');
+            container.innerHTML = '';
+
+            currentCategories.forEach(cat => {
+                const btn = document.createElement('button');
+                btn.className = "w-full text-left px-3 py-2 bg-gray-50 hover:bg-emerald-50 hover:text-emerald-700 rounded-xl text-xs font-medium border border-gray-100 flex items-center gap-2 transition";
+                btn.innerHTML = `<i class="fa-solid ${cat.icon} text-emerald-600"></i> ${escapeHtml(cat.name)}`;
+                btn.onclick = () => {
+                    selezionaNuovaCategoria(cat.name);
+                };
+                container.appendChild(btn);
+            });
+
+            document.getElementById('category-modal').classList.remove('hidden');
+        }
+
+        window.chiudiModaleCategoria = function() {
+            document.getElementById('category-modal').classList.add('hidden');
+            itemIdDaModificare = null;
+        }
+
+        window.selezionaNuovaCategoria = function(nomeCategoria) {
+            if (!itemIdDaModificare) return;
+            const item = currentItems.find(i => i.id === itemIdDaModificare);
+            if (item) {
+                item.category = nomeCategoria;
+                salvaInLocalStorage();
+                renderItems();
+            }
+            chiudiModaleCategoria();
+        }
+
+        function renderCatalogoIcone() {
+            const container = document.getElementById('icon-catalog');
+            if(!container) return;
+            container.innerHTML = '';
+
+            iconCatalogList.forEach(iconName => {
+                const btn = document.createElement('button');
+                btn.type = "button";
+                btn.className = `p-2 rounded-lg border flex items-center justify-center transition text-sm ${selectedIcon === iconName ? 'bg-emerald-600 text-white border-emerald-600 shadow' : 'bg-gray-50 text-gray-700 border-gray-200 hover:bg-gray-100'}`;
+                btn.innerHTML = `<i class="fa-solid ${iconName}"></i>`;
+                btn.onclick = () => {
+                    selectedIcon = iconName;
+                    renderCatalogoIcone();
+                };
+                container.appendChild(btn);
+            });
+        }
+
+        window.aggiungiNuovaCategoria = function() {
+            const nameInput = document.getElementById('new-cat-name');
+            const name = nameInput.value.trim();
+
+            if (!name) {
+                alert("Inserisci un nome per la categoria.");
+                return;
+            }
+
+            if (currentCategories.some(c => c.name.toLowerCase() === name.toLowerCase())) {
+                alert("Questa categoria esiste già.");
+                return;
+            }
+
+            currentCategories.push({ name, icon: selectedIcon });
+            salvaInLocalStorage();
+
+            nameInput.value = '';
+            renderCategoriesSettings();
+            popolaSelectCategorie();
+            renderItems();
+        }
+
+        window.eliminaCategoria = function(index) {
+            if (currentCategories.length <= 1) {
+                alert("Devi mantenere almeno una categoria.");
+                return;
+            }
+            const catRimossa = currentCategories[index].name;
+            currentCategories.splice(index, 1);
+
+            currentItems.forEach(item => {
+                if (item.category === catRimossa) {
+                    item.category = currentCategories[0].name;
+                }
+            });
+
+            salvaInLocalStorage();
+            renderAll();
+        }
+
+        window.eseguiImportazione = async function() {
+            const textContent = document.getElementById('import-text').value.trim();
+            const fileInput = document.getElementById('import-file').files[0];
+
+            let righeTrovate = [];
+
+            if (textContent) {
+                righeTrovate = textContent.split('\n').map(l => l.trim()).filter(l => l.length > 0);
+            }
+
+            if (fileInput) {
+                if (fileInput.type === "application/pdf") {
+                    try {
+                        const arrayBuffer = await fileInput.arrayBuffer();
+                        const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
+                        let textPdf = "";
+                        for (let i = 1; i <= pdf.numPages; i++) {
+                            const page = await pdf.getPage(i);
+                            const textContentPage = await page.getTextContent();
+                            textPdf += textContentPage.items.map(item => item.str).join('\n') + '\n';
+                        }
+                        const righePdf = textPdf.split('\n').map(l => l.trim()).filter(l => l.length > 0);
+                        righeTrovate = righeTrovate.concat(righePdf);
+                    } catch (err) {
+                        alert("Errore nella lettura del file PDF.");
+                        return;
+                    }
+                } else {
+                    const textFile = await fileInput.text();
+                    const righeFile = textFile.split('\n').map(l => l.trim()).filter(l => l.length > 0);
+                    righeTrovate = righeTrovate.concat(righeFile);
+                }
+            }
+
+            if (righeTrovate.length === 0) {
+                alert("Nessun articolo trovato.");
+                return;
+            }
+
+            const defaultCat = currentCategories[0] ? currentCategories[0].name : "Altro";
+            righeTrovate.forEach((riga, index) => {
+                currentItems.unshift({
+                    id: 'import-' + Date.now() + '-' + index,
+                    text: riga,
+                    category: defaultCat,
+                    quantity: '',
+                    note: '',
+                    photo: '',
+                    bought: false
+                });
+            });
+
+            salvaInLocalStorage();
+            renderItems();
+
+            document.getElementById('import-text').value = '';
+            document.getElementById('import-file').value = '';
+            alert("Articoli importati con successo!");
+        }
+
+        document.getElementById('cost-form').addEventListener('submit', (e) => {
+            e.preventDefault();
+            const dateInput = document.getElementById('cost-date').value;
+            const amountInput = parseFloat(document.getElementById('cost-amount').value);
+            const cashInputIndicativo = parseFloat(document.getElementById('cost-cash').value) || 0;
+
+            if (!dateInput || isNaN(amountInput)) return;
+
+            const coveredByVouchers = Math.max(0, amountInput - cashInputIndicativo);
+            const vouchersUsed = Math.round(coveredByVouchers / voucherValue);
+
+            const valoreTotaleBuoni = vouchersUsed * voucherValue;
+            const cashEffettivo = Math.max(0, amountInput - valoreTotaleBuoni);
+
+            const newCost = {
+                id: 'cost-' + Date.now(),
+                date: dateInput,
+                amount: amountInput,
+                cash: cashEffettivo,
+                vouchers: vouchersUsed
+            };
+
+            currentCosts.unshift(newCost);
+            salvaInLocalStorage();
+            renderCosts();
+
+            document.getElementById('cost-amount').value = '';
+            document.getElementById('cost-cash').value = '0';
+            document.getElementById('cost-date').valueAsDate = new Date();
+        });
+
+        document.getElementById('card-form').addEventListener('submit', (e) => {
+            e.preventDefault();
+            const name = document.getElementById('card-name').value.trim();
+            const number = document.getElementById('card-number').value.trim();
+            const type = document.getElementById('card-type').value;
+            const icon = document.getElementById('card-icon').value;
+            const color = document.getElementById('card-color').value;
+
+            if(!name || !number) return;
+
+            currentCards.push({ id: 'card-' + Date.now(), name, number, type, icon, color });
+            salvaInLocalStorage();
+            renderCards();
+
+            document.getElementById('card-name').value = '';
+            document.getElementById('card-number').value = '';
+            document.getElementById('card-brand-select').selectedIndex = 0;
+            document.getElementById('card-icon').value = 'fa-id-card';
+            document.getElementById('card-color').value = '#10b981';
+        });
+
+        window.startCamera = function() {
+            document.getElementById('reader-container').classList.remove('hidden');
+            html5QrCode = new Html5Qrcode("reader");
+            html5QrCode.start(
+                { facingMode: "environment" },
+                { fps: 10, qrbox: { width: 250, height: 150 } },
+                (decodedText, decodedResult) => {
+                    document.getElementById('card-number').value = decodedText;
+                    if (decodedResult.result.format && decodedResult.result.format.formatName.includes("QR")) {
+                        document.getElementById('card-type').value = "qrcode";
+                    } else {
+                        document.getElementById('card-type').value = "barcode";
+                    }
+                    stopCamera();
+                },
+                () => {}
+            ).catch(err => {
+                alert("Errore fotocamera: " + err);
+                stopCamera();
+            });
+        }
+
+        window.stopCamera = function() {
+            if(html5QrCode) {
+                html5QrCode.stop().then(() => {
+                    document.getElementById('reader-container').classList.add('hidden');
+                }).catch(() => {
+                    document.getElementById('reader-container').classList.add('hidden');
+                });
+            } else {
+                document.getElementById('reader-container').classList.add('hidden');
+            }
+        }
+
+        window.deleteCard = function(id) {
+            currentCards = currentCards.filter(c => c.id !== id);
+            salvaInLocalStorage();
+            renderCards();
+        }
+
+        window.toggleItem = function(id) {
+            const item = currentItems.find(i => i.id === id);
+            if (!item) return;
+
+            if (base64FotoTemp) {
+                item.photo = base64FotoTemp;
+                rimuoviFoto();
+                salvaInLocalStorage();
+                renderItems();
+                return;
+            }
+
+            item.bought = !item.bought;
+            salvaInLocalStorage();
+            renderItems();
+            renderBought();
+        }
+
+        window.deleteItem = function(id) {
+            currentItems = currentItems.filter(item => item.id !== id);
+            salvaInLocalStorage();
+            renderItems();
+            renderBought();
+        }
+
+        window.deleteCost = function(id) {
+            currentCosts = currentCosts.filter(c => c.id !== id);
+            salvaInLocalStorage();
+            renderCosts();
+        }
+
+        window.pulisciComprati = function() {
+            currentItems = currentItems.filter(item => !item.bought);
+            salvaInLocalStorage();
+            renderBought();
+            renderItems();
+        }
+
+        window.salvaValoreBuono = function() {
+            const val = parseFloat(document.getElementById('voucher-value-input').value);
+            if(!isNaN(val) && val > 0) {
+                voucherValue = val;
+                localStorage.setItem(STORAGE_KEYS.VOUCHER_VAL, voucherValue);
+                renderCosts();
+                alert("Valore buono pasto aggiornato!");
+            }
+        }
+
+        window.scrollToCategory = function(catName) {
+            const headerElem = document.getElementById('cat-header-' + catName.replace(/\s+/g, '-'));
+            if (headerElem) {
+                headerElem.scrollIntoView({ behavior: 'smooth', block: 'start' });
+            }
+        }
+
+        function renderAll() {
+            popolaSelectCategorie();
+            renderCategoriesSettings();
+            renderCatalogoIcone();
+            aggiornaStatoPulsanteToggle();
+            renderItems();
+            renderBought();
+            renderCosts();
+            renderCards();
+        }
+
+        function popolaSelectCategorie() {
+            const select = document.getElementById('category-input');
+            if(!select) return;
+            const valCorrente = select.value;
+            select.innerHTML = '';
+            currentCategories.forEach(cat => {
+                const opt = document.createElement('option');
+                opt.value = cat.name;
+                opt.innerText = cat.name;
+                select.appendChild(opt);
+            });
+            if (valCorrente && Array.from(select.options).some(o => o.value === valCorrente)) {
+                select.value = valCorrente;
+            }
+        }
+
+        function renderCategoriesSettings() {
+            const container = document.getElementById('categories-settings-container');
+            if(!container) return;
+            container.innerHTML = '';
+
+            currentCategories.forEach((cat, index) => {
+                const div = document.createElement('div');
+                div.className = "flex items-center justify-between bg-gray-50 p-1.5 rounded-lg border border-gray-200 text-[11px]";
+                div.innerHTML = `
+                    <div class="flex items-center gap-2">
+                        <i class="fa-solid ${cat.icon} text-emerald-600"></i>
+                        <span class="font-medium text-gray-700">${escapeHtml(cat.name)}</span>
+                    </div>
+                    <button onclick="eliminaCategoria(${index})" class="text-gray-300 hover:text-red-500 px-1.5 py-0.5"><i class="fa-solid fa-xmark"></i></button>
+                `;
+                container.appendChild(div);
+            });
+        }
+
+        function renderItems() {
+            const container = document.getElementById('items-container');
+            const sideTabs = document.getElementById('category-side-tabs');
+            if(!container) return;
+            container.innerHTML = '';
+            sideTabs.innerHTML = '';
+
+            let toBuy = currentItems.filter(item => !item.bought);
+
+            if (filtroRicercaTesto) {
+                toBuy = toBuy.filter(item => item.text.toLowerCase().includes(filtroRicercaTesto));
+            }
+
+            if (toBuy.length === 0) {
+                container.innerHTML = `
+                    <div class="text-center py-8 text-gray-400 text-xs">
+                        <i class="fa-regular fa-face-smile text-2xl mb-1 block text-emerald-400"></i>
+                        Nessun articolo trovato!
+                    </div>`;
+                updateProgress(currentItems.filter(i => i.bought).length, currentItems.length);
+                return;
+            }
+
+            if (groupByCategories) {
+                currentCategories.forEach((cat, idx) => {
+                    const itemsInCat = toBuy.filter(item => item.category === cat.name);
+                    if (itemsInCat.length > 0) {
+                        const color = categoryColors[idx % categoryColors.length];
+                        const safeCatId = 'cat-header-' + cat.name.replace(/\s+/g, '-');
+
+                        const catHeader = document.createElement('div');
+                        catHeader.id = safeCatId;
+                        catHeader.style.backgroundColor = color;
+                        catHeader.className = "text-white font-bold text-[10px] px-2.5 py-1 rounded-lg mt-2 mb-1 flex items-center gap-1.5 uppercase tracking-wider shadow-sm";
+                        catHeader.innerHTML = `<i class="fa-solid ${cat.icon}"></i> ${escapeHtml(cat.name)}`;
+                        container.appendChild(catHeader);
+
+                        itemsInCat.forEach(item => {
+                            container.appendChild(createItemElement(item));
+                        });
+
+                        const tabBtn = document.createElement('div');
+                        tabBtn.className = "tab-index-item";
+                        tabBtn.style.backgroundColor = color;
+                        tabBtn.title = cat.name;
+                        tabBtn.innerHTML = `<i class="fa-solid ${cat.icon}"></i>`;
+                        tabBtn.onclick = () => scrollToCategory(cat.name);
+                        sideTabs.appendChild(tabBtn);
+                    }
+                });
+            } else {
+                toBuy.sort((a, b) => a.text.localeCompare(b.text));
+                toBuy.forEach(item => {
+                    container.appendChild(createItemElement(item));
+                });
+            }
+
+            updateProgress(currentItems.filter(i => i.bought).length, currentItems.length);
+        }
+
+        function renderBought() {
+            const container = document.getElementById('bought-container');
+            if(!container) return;
+            container.innerHTML = '';
+
+            let bought = currentItems.filter(item => item.bought);
+
+            if (bought.length === 0) {
+                container.innerHTML = `<div class="text-center py-8 text-gray-400 text-xs">Nessun articolo comprato finora.</div>`;
+            }
+
+            bought.forEach(item => {
+                container.appendChild(createItemElement(item));
+            });
+        }
+
+        function createItemElement(item) {
+            const div = document.createElement('div');
+            div.className = `flex items-center justify-between p-2.5 rounded-xl border transition-all ${
+                item.bought ? 'bg-gray-50 border-gray-200 opacity-70' : 'bg-white border-gray-100 shadow-sm'
+            }`;
+
+            const photoHtml = item.photo ? `<img src="${item.photo}" class="w-10 h-10 object-cover rounded-lg mr-2 shrink-0 border border-gray-200 shadow-sm">` : '';
+            const noteHtml = item.note ? `<span class="text-gray-500 italic block text-[9px]">Nota: ${escapeHtml(item.note)}</span>` : '';
+
+            const catObj = currentCategories.find(c => c.name === item.category);
+            const iconClass = catObj ? catObj.icon : 'fa-tag';
+
+            div.innerHTML = `
+                <div class="flex items-center gap-2 flex-1 cursor-pointer overflow-hidden" onclick="toggleItem('${item.id}')">
+                    <div class="w-4 h-4 rounded-full border-2 flex items-center justify-center shrink-0 transition-colors ${
+                        item.bought ? 'bg-emerald-500 border-emerald-500 text-white' : 'border-gray-300 bg-white'
+                    }">
+                        ${item.bought ? '<i class="fa-solid fa-check text-[9px]"></i>' : ''}
+                    </div>
+                    ${photoHtml}
+                    <div class="flex-1 truncate">
+                        <p class="text-xs font-medium text-gray-800 truncate ${item.bought ? 'line-through text-gray-400' : ''}">${escapeHtml(item.text)}</p>
+                        ${noteHtml}
+                        <div class="flex gap-2 text-[9px] text-gray-400 mt-0.5 items-center">
+                            <span onclick="apriModaleCategoria('${item.id}', event)" class="font-semibold text-emerald-600 bg-emerald-50 px-1.5 py-0.5 rounded border border-emerald-100 cursor-pointer hover:bg-emerald-100 flex items-center gap-1" title="Clicca per cambiare categoria">
+                                <i class="fa-solid ${iconClass}"></i> ${escapeHtml(item.category)} ▾
+                            </span>
+                            ${item.quantity ? `<span>• ${escapeHtml(item.quantity)}</span>` : ''}
+                        </div>
+                    </div>
+                </div>
+                <button onclick="deleteItem('${item.id}')" class="text-gray-300 hover:text-red-500 p-1.5 transition shrink-0">
+                    <i class="fa-solid fa-xmark text-xs"></i>
+                </button>
+            `;
+            return div;
+        }
+
+        function renderCosts() {
+            const container = document.getElementById('costs-container');
+            if(!container) return;
+            container.innerHTML = '';
+
+            const now = new Date();
+            const currentMonth = now.toISOString().slice(0, 7);
+            const currentYear = now.getFullYear().toString();
+
+            let monthlyTotal = 0;
+            let monthlyVouchers = 0;
+            let yearlyTotal = 0;
+            let yearlyVouchers = 0;
+
+            if(currentCosts.length === 0) {
+                container.innerHTML = `<div class="text-center py-4 text-gray-400 text-xs">Nessuna spesa registrata.</div>`;
+            }
+
+            currentCosts.forEach(cost => {
+                if (cost.date.startsWith(currentMonth)) {
+                    monthlyTotal += cost.amount;
+                    monthlyVouchers += cost.vouchers;
+                }
+                if (cost.date.startsWith(currentYear)) {
+                    yearlyTotal += cost.amount;
+                    yearlyVouchers += cost.vouchers;
+                }
+
+                const cashText = cost.cash !== undefined ? ` • Contanti: € ${cost.cash.toFixed(2)}` : '';
+
+                const div = document.createElement('div');
+                div.className = "flex items-center justify-between p-2 bg-gray-50 rounded-xl border border-gray-100 text-[11px]";
+                div.innerHTML = `
+                    <div>
+                        <span class="font-bold text-gray-700 block">${cost.date}</span>
+                        <span class="text-gray-500">Buoni: <strong class="text-emerald-700">${cost.vouchers}</strong>${cashText}</span>
+                    </div>
+                    <div class="flex items-center gap-2">
+                        <span class="font-extrabold text-emerald-600 text-xs">€ ${cost.amount.toFixed(2)}</span>
+                        <button onclick="deleteCost('${cost.id}')" class="text-gray-300 hover:text-red-500 p-1"><i class="fa-solid fa-xmark"></i></button>
+                    </div>
+                `;
+                container.appendChild(div);
+            });
+
+            document.getElementById('monthly-total').innerText = `€ ${monthlyTotal.toFixed(2)}`;
+            document.getElementById('monthly-vouchers').innerText = `Buoni: ${monthlyVouchers}`;
+            document.getElementById('yearly-total').innerText = `€ ${yearlyTotal.toFixed(2)}`;
+            document.getElementById('yearly-vouchers').innerText = `Buoni: ${yearlyVouchers}`;
+        }
+
+        function renderCards() {
+            const container = document.getElementById('cards-container');
+            if(!container) return;
+            container.innerHTML = '';
+
+            let carteFiltrate = currentCards;
+            if (filtroRicercaCarte) {
+                carteFiltrate = currentCards.filter(card => card.name.toLowerCase().includes(filtroRicercaCarte) || card.number.includes(filtroRicercaCarte));
+            }
+
+            if(carteFiltrate.length === 0) {
+                container.innerHTML = `<div class="text-center py-4 text-gray-400 text-xs">Nessuna carta trovata.</div>`;
+                return;
+            }
+
+            carteFiltrate.forEach(card => {
+                const cardIcon = card.icon || 'fa-id-card';
+                const cardColor = card.color || '#10b981';
+
+                const div = document.createElement('div');
+                div.className = "bg-white p-2.5 rounded-xl border border-gray-200 shadow-sm flex flex-col items-center justify-between";
+                
+                const codeContainerHtml = (card.type === 'qrcode') 
+                    ? `<div id="qrcode-${card.id}" class="py-1 flex justify-center"></div>`
+                    : `<svg id="barcode-${card.id}" class="max-w-full"></svg>`;
+
+                div.innerHTML = `
+                    <div class="w-full flex justify-between items-center mb-1">
+                        <div class="flex items-center gap-2">
+                            <div class="w-7 h-7 rounded-lg flex items-center justify-center text-white text-xs shadow-sm" style="background-color: ${cardColor};">
+                                <i class="fa-solid ${cardIcon}"></i>
+                            </div>
+                            <div>
+                                <strong class="font-bold text-gray-800 text-xs block">${escapeHtml(card.name)}</strong>
+                                <span class="text-[9px] text-gray-400 font-mono">${escapeHtml(card.number)}</span>
+                            </div>
+                        </div>
+                        <button onclick="deleteCard('${card.id}')" class="text-gray-300 hover:text-red-500 p-1 text-xs"><i class="fa-solid fa-trash"></i></button>
+                    </div>
+                    <div class="bg-white p-1 rounded w-full flex justify-center items-center">
+                        ${codeContainerHtml}
+                    </div>
+                `;
+                container.appendChild(div);
+
+                if (card.type === 'qrcode') {
+                    new QRCode(document.getElementById(`qrcode-${card.id}`), {
+                        text: card.number,
+                        width: 120,
+                        height: 120,
+                        colorDark : "#111827",
+                        colorLight : "#ffffff",
+                        correctLevel : QRCode.CorrectLevel.H
+                    });
+                } else {
+                    try {
+                        JsBarcode(`#barcode-${card.id}`, card.number, {
+                            format: "CODE128",
+                            lineColor: "#111827",
+                            width: 1.6,
+                            height: 45,
+                            displayValue: true,
+                            fontSize: 11
+                        });
+                    } catch(e) {
+                        console.error("Errore generazione barcode:", e);
+                    }
+                }
+            });
+        }
+
+        function updateProgress(comprati, totale) {
+            const percent = totale === 0 ? 0 : Math.round((comprati / totale) * 100);
+            document.getElementById('progress-text').innerText = `Comprati: ${comprati} su ${totale}`;
+            document.getElementById('progress-percent').innerText = `${percent}%`;
+            document.getElementById('progress-bar').style.width = `${percent}%`;
+        }
+
+        function escapeHtml(str) {
+            return str.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#039;");
+        }
+
+        // Inizializzazione dati locali all'avvio
+        caricaDaLocalStorage();
+    </script>
+</body>
+</html>
